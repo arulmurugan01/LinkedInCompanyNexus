@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LinkedIn Job Scraper — Live Logs</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Courier New', monospace; background: #0d1117; color: #58a6ff; padding: 24px; }
+        h2  { color: #f0f6fc; margin-bottom: 16px; font-size: 18px; }
+
+        .toolbar {
+            display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;
+        }
+        input, select {
+            background: #161b22; border: 1px solid #30363d; color: #c9d1d9;
+            padding: 8px 12px; border-radius: 6px; font-size: 13px;
+        }
+        input[type="text"] { flex: 1; min-width: 320px; }
+        button {
+            background: #238636; color: #fff; border: none;
+            padding: 8px 18px; border-radius: 6px; cursor: pointer; font-size: 13px;
+        }
+        button:hover   { background: #2ea043; }
+        button.stop    { background: #da3633; }
+        button.stop:hover { background: #f85149; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        #status { color: #8b949e; font-size: 12px; margin-bottom: 8px; }
+        #status.active { color: #3fb950; }
+
+        #logs {
+            background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+            padding: 16px; height: 60vh; overflow-y: auto;
+            white-space: pre-wrap; font-size: 13px; line-height: 1.6;
+        }
+
+        .summary {
+            margin-top: 16px; background: #161b22; border: 1px solid #30363d;
+            border-radius: 8px; padding: 16px; display: none;
+        }
+        .summary h3 { color: #3fb950; margin-bottom: 8px; }
+        .summary table { border-collapse: collapse; width: 100%; font-size: 12px; }
+        .summary td, .summary th {
+            border: 1px solid #30363d; padding: 6px 10px; text-align: left;
+        }
+        .summary th { background: #0d1117; color: #8b949e; }
+        .summary td { color: #c9d1d9; }
+    </style>
+</head>
+<body>
+    <h2>🔍 LinkedIn Job Scraper — Live Logs</h2>
+
+    <div class="toolbar">
+        <input type="text" id="searchUrl"
+            placeholder="LinkedIn jobs search URL…"
+            value="https://www.linkedin.com/jobs/search-results/?keywords=react+%2B+nodejs&origin=SWITCH_SEARCH_VERTICAL" />
+
+        <select id="maxPages">
+            <option value="1">1 page</option>
+            <option value="3" selected>3 pages</option>
+            <option value="5">5 pages</option>
+            <option value="10">10 pages</option>
+        </select>
+
+        <select id="skipApplied">
+            <option value="true" selected>Skip applied</option>
+            <option value="false">Include applied</option>
+        </select>
+
+        <label style="color:#c9d1d9;font-size:13px;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="scrapeAll"> Scrape ALL pages
+        </label>
+
+        <button id="startBtn" onclick="startScraping()">▶ Start</button>
+        <button id="clearBtn" onclick="clearLogs()">🗑 Clear</button>
+    </div>
+
+    <p id="status">● Disconnected</p>
+    <div id="logs">Waiting to start…</div>
+
+    <div class="summary" id="summary">
+        <h3>✅ Scraping Complete</h3>
+        <p id="summaryText"></p>
+        <br/>
+        <table id="resultsTable">
+            <thead>
+                <tr>
+                    <th>#</th><th>Title</th><th>Company</th>
+                    <th>Location</th><th>Salary</th><th>Work Type</th>
+                    <th>Employment</th><th>Apply</th>
+                </tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+        </table>
+    </div>
+
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <script>
+        const socket = io('http://localhost:3000');
+        const logsDiv  = document.getElementById('logs');
+        const statusEl = document.getElementById('status');
+
+        socket.on('connect', () => {
+            statusEl.textContent = '● Connected';
+            statusEl.className = 'active';
+        });
+
+        socket.on('disconnect', () => {
+            statusEl.textContent = '● Disconnected';
+            statusEl.className = '';
+        });
+
+        socket.on('log', (data) => {
+            logsDiv.textContent += data.message + '\n';
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+        });
+
+        socket.on('complete', (data) => {
+            logsDiv.textContent += `\n✅ COMPLETE: ${data.totalJobs} jobs scraped\n`;
+            logsDiv.textContent += `📁 File: ${data.filepath}\n`;
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+
+            document.getElementById('startBtn').disabled = false;
+
+            // Show summary table
+            if (data.data && data.data.length > 0) {
+                document.getElementById('summary').style.display = 'block';
+                document.getElementById('summaryText').textContent =
+                    `Total: ${data.totalJobs} jobs | File: ${data.filepath}`;
+                const tbody = document.getElementById('resultsBody');
+                tbody.innerHTML = '';
+                data.data.forEach((job, i) => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${i + 1}</td>
+                        <td><a href="${job.jobUrl || '#'}" target="_blank" style="color:#58a6ff">${job.title || '—'}</a></td>
+                        <td>${job.company || '—'}</td>
+                        <td>${job.location || '—'}</td>
+                        <td>${job.salary || '—'}</td>
+                        <td>${job.workType || '—'}</td>
+                        <td>${job.employmentType || '—'}</td>
+                        <td>${job.applyType || '—'}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+        });
+
+        socket.on('error', (data) => {
+            logsDiv.textContent += `\n❌ ERROR: ${data.error}\n`;
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+            document.getElementById('startBtn').disabled = false;
+        });
+
+        async function startScraping() {
+            const searchUrl  = document.getElementById('searchUrl').value.trim();
+            const maxPages   = parseInt(document.getElementById('maxPages').value);
+            const skipApplied = document.getElementById('skipApplied').value === 'true';
+            const scrapeAll  = document.getElementById('scrapeAll').checked;
+
+            if (!searchUrl) { alert('Please enter a search URL'); return; }
+
+            logsDiv.textContent = '';
+            document.getElementById('summary').style.display = 'none';
+            document.getElementById('startBtn').disabled = true;
+
+            try {
+                const resp = await fetch('http://localhost:3000/api/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ searchUrl, maxPages, scrapeAll, skipApplied })
+                });
+                const result = await resp.json();
+                logsDiv.textContent += result.message + '\n';
+            } catch (e) {
+                logsDiv.textContent += `❌ Could not reach server: ${e.message}\n`;
+                document.getElementById('startBtn').disabled = false;
+            }
+        }
+
+        function clearLogs() {
+            logsDiv.textContent = '';
+            document.getElementById('summary').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# Node.js / TypeScript
+node_modules/
+dist/
+build/
+
+# Local data & logs
+data/cookies.json
+data/results/
+
+# Env
+.env
+
+# OS / IDE
+.DS_Store
+.vscode/
